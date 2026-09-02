@@ -4,4 +4,4 @@
 # exported by the caller.
 set -euo pipefail
 export ENV=dev
-exec "$(dirname "$0")/../../scripts/deploy.sh"
+exec bash "$(dirname "$0")/../../scripts/deploy.sh"
