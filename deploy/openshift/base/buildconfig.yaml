@@ -1,0 +1,21 @@
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: order-service
+spec:
+  source:
+    type: Dockerfile
+    contextDir: app
+    git:
+      uri: https://github.com/acme/order-service.git # TODO: real repo URL
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: OrderService.application/docker/Dockerfile
+      buildArgs:
+        - name: DESIGN_TIME_ENV
+          value: dev # overridden per overlay
+  output:
+    to:
+      kind: ImageStreamTag
+      name: order-service:latest

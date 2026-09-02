@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: order-service-config
+data:
+  PORT: "8080"
+  APP_ENV: "prod"
+  LOG_LEVEL: "WARN"
+  DOWNSTREAM_INVENTORY_URL: "http://inventory-service.prod.internal:9090"

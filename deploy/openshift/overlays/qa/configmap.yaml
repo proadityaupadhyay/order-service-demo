@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: order-service-config
+data:
+  PORT: "8080"
+  APP_ENV: "qa"
+  LOG_LEVEL: "INFO"
+  DOWNSTREAM_INVENTORY_URL: "http://inventory-service.qa.internal:9090"

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Design-time property overrides for the dev environment. Selected at build
+  time by the Jenkinsfile based on branch (see deploy/ci-cd/Jenkinsfile).
+  Real BWCE projects manage these via Studio; this is a hand-authored
+  stand-in with the same shape.
+-->
+<repository:ProcessDefinitions xmlns:repository="http://xsd.tns.tibco.com/bw/adm/2010/ProcessDefinitions">
+  <globalVariables>
+    <globalVariable>
+      <name>OrderService/DiscountRate</name>
+      <value>0.05</value>
+      <deploymentSettable>true</deploymentSettable>
+      <type>xsd:string</type>
+    </globalVariable>
+  </globalVariables>
+</repository:ProcessDefinitions>

@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Parent/reactor pom for the app/ tree (owned by the integration/BW team).
+
+  Real TIBCO BWCE projects are normally built with the TIBCO BusinessWorks
+  Maven plugin (group com.tibco.bw), which needs a TIBCO Maven repository
+  and license. That plugin isn't available in this environment, so
+  OrderService.module and OrderService.application are scaffolded here as
+  plain Maven jar modules with stand-in Java logic in place of real .bwp
+  processes, enough to prove the Jenkins build/test/docker/deploy pipeline
+  end-to-end. Swap the module/application poms for the real TIBCO-generated
+  ones when the actual BWCE project is dropped in; the reactor structure,
+  module names, and Dockerfile location stay the same.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>com.acme.orders</groupId>
+  <artifactId>order-service-parent</artifactId>
+  <version>1.0.0-SNAPSHOT</version>
+  <packaging>pom</packaging>
+
+  <properties>
+    <maven.compiler.release>11</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <junit.version>5.10.2</junit.version>
+  </properties>
+
+  <modules>
+    <module>OrderService.module</module>
+    <module>OrderService.application</module>
+  </modules>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter</artifactId>
+        <version>${junit.version}</version>
+        <scope>test</scope>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <build>
+    <pluginManagement>
+      <plugins>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-surefire-plugin</artifactId>
+          <version>3.2.5</version>
+        </plugin>
+      </plugins>
+    </pluginManagement>
+  </build>
+</project>

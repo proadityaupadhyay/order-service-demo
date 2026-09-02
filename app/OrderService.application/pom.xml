@@ -1,0 +1,138 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>com.acme.orders</groupId>
+    <artifactId>order-service-parent</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+  </parent>
+
+  <!-- Stand-in for the real OrderService.application EAR build. Packages as
+       a runnable "fat" jar instead of a BWCE EAR/app archive so it can be
+       containerized and health-checked in this scaffold. -->
+  <artifactId>OrderService.application</artifactId>
+  <packaging>jar</packaging>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.acme.orders</groupId>
+      <artifactId>OrderService.module</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <profiles>
+    <!-- Selected by the Jenkinsfile per branch (-Pdev/-Pqa/-Puat/-Pprod).
+         Each bakes the matching configuration/{env}.substvar into the jar
+         as classpath resource "design-time.substvar", read by
+         OrderServiceApp at startup. dev is the local/default fallback. -->
+    <profile>
+      <id>dev</id>
+      <activation><activeByDefault>true</activeByDefault></activation>
+      <properties><design-time-env>dev</design-time-env></properties>
+    </profile>
+    <profile>
+      <id>qa</id>
+      <properties><design-time-env>qa</design-time-env></properties>
+    </profile>
+    <profile>
+      <id>uat</id>
+      <properties><design-time-env>uat</design-time-env></properties>
+    </profile>
+    <profile>
+      <id>prod</id>
+      <properties><design-time-env>prod</design-time-env></properties>
+    </profile>
+  </profiles>
+
+  <build>
+    <finalName>order-service-app</finalName>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-resources-plugin</artifactId>
+        <version>3.3.1</version>
+        <executions>
+          <execution>
+            <id>bake-design-time-config</id>
+            <phase>generate-resources</phase>
+            <goals><goal>copy-resources</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.outputDirectory}</outputDirectory>
+              <resources>
+                <resource>
+                  <directory>${project.basedir}/configuration</directory>
+                  <includes>
+                    <include>${design-time-env}.substvar</include>
+                  </includes>
+                  <targetPath>.</targetPath>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-antrun-plugin</artifactId>
+        <version>3.1.0</version>
+        <executions>
+          <execution>
+            <id>rename-design-time-config</id>
+            <phase>generate-resources</phase>
+            <goals><goal>run</goal></goals>
+            <configuration>
+              <target>
+                <copy file="${project.build.outputDirectory}/${design-time-env}.substvar"
+                      tofile="${project.build.outputDirectory}/design-time.substvar"
+                      overwrite="true" />
+              </target>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <version>3.4.1</version>
+        <configuration>
+          <archive>
+            <manifest>
+              <mainClass>com.acme.orders.app.OrderServiceApp</mainClass>
+              <addClasspath>true</addClasspath>
+              <classpathPrefix>lib/</classpathPrefix>
+            </manifest>
+          </archive>
+        </configuration>
+      </plugin>
+      <plugin>
+        <!-- No external deps to shade today, but kept so the jar stays
+             self-running if dependencies are added later. -->
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-dependency-plugin</artifactId>
+        <version>3.6.1</version>
+        <executions>
+          <execution>
+            <id>copy-dependencies</id>
+            <phase>package</phase>
+            <goals>
+              <goal>copy-dependencies</goal>
+            </goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/lib</outputDirectory>
+              <includeScope>runtime</includeScope>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

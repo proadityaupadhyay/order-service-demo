@@ -1,0 +1,134 @@
+// Multibranch Pipeline script path: deploy/ci-cd/Jenkinsfile (not the repo
+// root -- set this explicitly in the Jenkins job config).
+//
+// Flow: checkout -> resolve env from branch -> mvn build+test -> docker
+// build (bakes the branch's design-time.substvar in) -> push to the private
+// registry -> SSH deploy to the remote Docker host -> smoke test.
+//
+// TODO before this is live:
+//   - REGISTRY / REMOTE_HOST below
+//   - branch -> env map in "Resolve Environment" if your branch names differ
+//   - Jenkins credentials: REGISTRY_CRED (username/password) and
+//     REMOTE_SSH_CRED (SSH private key) must exist with these exact IDs
+
+pipeline {
+    agent any
+
+    environment {
+        REGISTRY          = 'registry.example.com'         // TODO: Nexus/Harbor host[:port]
+        IMAGE_NAME         = 'order-service'
+        REGISTRY_CRED      = 'registry-credentials'
+        REMOTE_HOST        = 'deploy@remote-docker-host'   // TODO: user@remote-docker-host
+        REMOTE_SSH_CRED    = 'remote-docker-ssh-key'
+        REMOTE_DEPLOY_DIR  = 'order-service-deploy'
+        DEPLOY_PORT        = '8080'
+    }
+
+    options {
+        timestamps()
+        buildDiscarder(logRotator(numToKeepStr: '20'))
+    }
+
+    stages {
+
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Resolve Environment') {
+            steps {
+                script {
+                    // TODO: adjust to the real branching convention.
+                    def envMap = [
+                        'dev'   : 'dev',
+                        'qa'    : 'qa',
+                        'uat'   : 'uat',
+                        'main'  : 'prod',
+                        'master': 'prod',
+                        'prod'  : 'prod'
+                    ]
+                    env.DEPLOY_ENV = envMap.containsKey(env.BRANCH_NAME) ? envMap[env.BRANCH_NAME] : 'dev'
+                    env.IMAGE_TAG = "${env.DEPLOY_ENV}-${env.BUILD_NUMBER}"
+                    echo "Branch '${env.BRANCH_NAME}' -> environment '${env.DEPLOY_ENV}' (image tag ${env.IMAGE_TAG})"
+                }
+            }
+        }
+
+        stage('Build & Test (Maven)') {
+            steps {
+                dir('app') {
+                    // -P${DEPLOY_ENV} bakes app/OrderService.application/configuration/{env}.substvar
+                    // into the OrderService.application jar. See its pom.xml profiles.
+                    sh "mvn -B clean package -P${env.DEPLOY_ENV}"
+                }
+            }
+            post {
+                always {
+                    junit testResults: 'app/**/target/surefire-reports/*.xml', allowEmptyResults: true
+                }
+            }
+        }
+
+        stage('Docker Build') {
+            steps {
+                // Re-runs the Maven build inside the image for a clean,
+                // reproducible artifact (tests already ran and were
+                // reported in the previous stage, so skipped here).
+                sh """
+                    docker build \
+                        -f app/OrderService.application/docker/Dockerfile \
+                        --build-arg DESIGN_TIME_ENV=${env.DEPLOY_ENV} \
+                        -t ${REGISTRY}/${IMAGE_NAME}:${env.IMAGE_TAG} \
+                        -t ${REGISTRY}/${IMAGE_NAME}:${env.DEPLOY_ENV}-latest \
+                        app
+                """
+            }
+        }
+
+        stage('Push Image') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: env.REGISTRY_CRED, usernameVariable: 'REG_USER', passwordVariable: 'REG_PASS')]) {
+                    sh """
+                        echo "\$REG_PASS" | docker login ${REGISTRY} -u "\$REG_USER" --password-stdin
+                        docker push ${REGISTRY}/${IMAGE_NAME}:${env.IMAGE_TAG}
+                        docker push ${REGISTRY}/${IMAGE_NAME}:${env.DEPLOY_ENV}-latest
+                        docker logout ${REGISTRY}
+                    """
+                }
+            }
+        }
+
+        stage('Deploy') {
+            steps {
+                sshagent(credentials: [env.REMOTE_SSH_CRED]) {
+                    sh """
+                        ssh -o StrictHostKeyChecking=no ${REMOTE_HOST} 'mkdir -p ${REMOTE_DEPLOY_DIR}'
+                        rsync -az --delete -e 'ssh -o StrictHostKeyChecking=no' deploy/ ${REMOTE_HOST}:${REMOTE_DEPLOY_DIR}/
+                        ssh -o StrictHostKeyChecking=no ${REMOTE_HOST} \
+                            "IMAGE=${REGISTRY}/${IMAGE_NAME}:${env.IMAGE_TAG} PORT=${DEPLOY_PORT} bash ${REMOTE_DEPLOY_DIR}/ci-cd/deploy/deploy-${env.DEPLOY_ENV}.sh"
+                    """
+                }
+            }
+        }
+
+        stage('Smoke Test') {
+            steps {
+                sshagent(credentials: [env.REMOTE_SSH_CRED]) {
+                    sh """
+                        ssh -o StrictHostKeyChecking=no ${REMOTE_HOST} \
+                            "bash ${REMOTE_DEPLOY_DIR}/scripts/smoke-test.sh localhost ${DEPLOY_PORT}"
+                    """
+                }
+            }
+        }
+    }
+
+    post {
+        failure {
+            echo "Pipeline failed for branch ${env.BRANCH_NAME} (env: ${env.DEPLOY_ENV ?: 'unresolved'})"
+            // TODO: Slack/email notification
+        }
+    }
+}

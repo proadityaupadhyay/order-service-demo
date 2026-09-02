@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Placeholder module-level default substitution variables (design-time
+  defaults, overridden per-environment by
+  app/OrderService.application/configuration/{env}.substvar at build time).
+-->
+<repository:ProcessDefinitions xmlns:repository="http://xsd.tns.tibco.com/bw/adm/2010/ProcessDefinitions">
+  <globalVariables>
+    <globalVariable>
+      <name>OrderService/DiscountRate</name>
+      <value>0.0</value>
+      <deploymentSettable>true</deploymentSettable>
+      <type>xsd:string</type>
+    </globalVariable>
+  </globalVariables>
+</repository:ProcessDefinitions>

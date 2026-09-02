@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: order-service-config
+data:
+  # Mirrors deploy/config/dev/application.properties -- keep the two in sync
+  # (or, once this path is actually adopted, generate this from that file
+  # instead of hand-copying).
+  PORT: "8080"
+  APP_ENV: "dev"
+  LOG_LEVEL: "DEBUG"
+  DOWNSTREAM_INVENTORY_URL: "http://mock-service:9090"
