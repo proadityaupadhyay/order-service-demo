@@ -4,13 +4,18 @@
 # deploy/ci-cd/deploy/deploy-<env>.sh call this with ENV fixed.
 #
 # Required env vars: ENV, IMAGE
-# Optional: PORT (default 8080), CONTAINER_NAME (default order-service-$ENV)
+# Optional: PORT (host-side publish port, default 8080), CONTAINER_NAME
+# (default order-service-$ENV). The app always listens on 8080 *inside* the
+# container (set by PORT in config/{env}/application.properties) -- PORT
+# here only controls what host port it's published on, so it can differ
+# from the container's internal port.
 set -euo pipefail
 
 : "${ENV:?ENV not set (dev|qa|uat|prod)}"
 : "${IMAGE:?IMAGE not set, e.g. registry.example.com/order-service:dev-42}"
 
 PORT="${PORT:-8080}"
+CONTAINER_PORT=8080
 CONTAINER_NAME="${CONTAINER_NAME:-order-service-${ENV}}"
 CONFIG_FILE="$(dirname "$0")/../config/${ENV}/application.properties"
 
@@ -32,7 +37,7 @@ docker run -d \
     --name "${CONTAINER_NAME}" \
     --restart unless-stopped \
     --env-file "${CONFIG_FILE}" \
-    -p "${PORT}:${PORT}" \
+    -p "${PORT}:${CONTAINER_PORT}" \
     "${IMAGE}"
 
 echo "Deployed ${CONTAINER_NAME}"

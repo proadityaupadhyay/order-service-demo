@@ -5,23 +5,34 @@
 // build (bakes the branch's design-time.substvar in) -> push to the private
 // registry -> SSH deploy to the remote Docker host -> smoke test.
 //
-// TODO before this is live:
-//   - REGISTRY / REMOTE_HOST below
-//   - branch -> env map in "Resolve Environment" if your branch names differ
-//   - Jenkins credentials: REGISTRY_CRED (username/password) and
-//     REMOTE_SSH_CRED (SSH private key) must exist with these exact IDs
+// Registry: Docker Hub (proadityaupadhyay/order-service-demo, public repo) --
+// no registry host prefix needed, `docker login`/`push` default to docker.io.
+// Deploy target: `remote-docker-host`, a container on the same Jenkins
+// docker-compose stack simulating a real remote Docker host over SSH (see
+// ../../jenkins-cicd/remote-docker-host/). Point REMOTE_HOST at a real
+// user@host later to switch to an actual remote box; nothing else changes.
+//
+// TODO before a real remote host: swap REMOTE_HOST, otherwise unchanged.
 
 pipeline {
     agent any
 
     environment {
-        REGISTRY          = 'registry.example.com'         // TODO: Nexus/Harbor host[:port]
-        IMAGE_NAME         = 'order-service'
+        IMAGE_NAME         = 'proadityaupadhyay/order-service-demo'
         REGISTRY_CRED      = 'registry-credentials'
-        REMOTE_HOST        = 'deploy@remote-docker-host'   // TODO: user@remote-docker-host
+        REMOTE_HOST        = 'deploy@remote-docker-host'
         REMOTE_SSH_CRED    = 'remote-docker-ssh-key'
         REMOTE_DEPLOY_DIR  = 'order-service-deploy'
-        DEPLOY_PORT        = '8080'
+        DEPLOY_PORT        = '8083'        // host port 8080 was already taken by something else
+        // On a real remote host, the deployed container's published port is
+        // reachable at that host's own "localhost". In this local simulation,
+        // remote-docker-host shares the Jenkins host's actual Docker socket,
+        // so the container it deploys is really a sibling published on the
+        // physical Docker Desktop host, not on remote-docker-host's own
+        // network namespace -- "host.docker.internal" is what reaches it
+        // from inside remote-docker-host. Switch this back to 'localhost'
+        // when pointing REMOTE_HOST at a real remote box.
+        SMOKE_TEST_HOST    = 'host.docker.internal'
     }
 
     options {
@@ -80,8 +91,8 @@ pipeline {
                     docker build \
                         -f app/OrderService.application/docker/Dockerfile \
                         --build-arg DESIGN_TIME_ENV=${env.DEPLOY_ENV} \
-                        -t ${REGISTRY}/${IMAGE_NAME}:${env.IMAGE_TAG} \
-                        -t ${REGISTRY}/${IMAGE_NAME}:${env.DEPLOY_ENV}-latest \
+                        -t ${IMAGE_NAME}:${env.IMAGE_TAG} \
+                        -t ${IMAGE_NAME}:${env.DEPLOY_ENV}-latest \
                         app
                 """
             }
@@ -91,10 +102,10 @@ pipeline {
             steps {
                 withCredentials([usernamePassword(credentialsId: env.REGISTRY_CRED, usernameVariable: 'REG_USER', passwordVariable: 'REG_PASS')]) {
                     sh """
-                        echo "\$REG_PASS" | docker login ${REGISTRY} -u "\$REG_USER" --password-stdin
-                        docker push ${REGISTRY}/${IMAGE_NAME}:${env.IMAGE_TAG}
-                        docker push ${REGISTRY}/${IMAGE_NAME}:${env.DEPLOY_ENV}-latest
-                        docker logout ${REGISTRY}
+                        echo "\$REG_PASS" | docker login -u "\$REG_USER" --password-stdin
+                        docker push ${IMAGE_NAME}:${env.IMAGE_TAG}
+                        docker push ${IMAGE_NAME}:${env.DEPLOY_ENV}-latest
+                        docker logout
                     """
                 }
             }
@@ -107,7 +118,7 @@ pipeline {
                         ssh -o StrictHostKeyChecking=no ${REMOTE_HOST} 'mkdir -p ${REMOTE_DEPLOY_DIR}'
                         rsync -az --delete -e 'ssh -o StrictHostKeyChecking=no' deploy/ ${REMOTE_HOST}:${REMOTE_DEPLOY_DIR}/
                         ssh -o StrictHostKeyChecking=no ${REMOTE_HOST} \
-                            "IMAGE=${REGISTRY}/${IMAGE_NAME}:${env.IMAGE_TAG} PORT=${DEPLOY_PORT} bash ${REMOTE_DEPLOY_DIR}/ci-cd/deploy/deploy-${env.DEPLOY_ENV}.sh"
+                            "IMAGE=${IMAGE_NAME}:${env.IMAGE_TAG} PORT=${DEPLOY_PORT} bash ${REMOTE_DEPLOY_DIR}/ci-cd/deploy/deploy-${env.DEPLOY_ENV}.sh"
                     """
                 }
             }
@@ -118,7 +129,7 @@ pipeline {
                 sshagent(credentials: [env.REMOTE_SSH_CRED]) {
                     sh """
                         ssh -o StrictHostKeyChecking=no ${REMOTE_HOST} \
-                            "bash ${REMOTE_DEPLOY_DIR}/scripts/smoke-test.sh localhost ${DEPLOY_PORT}"
+                            "bash ${REMOTE_DEPLOY_DIR}/scripts/smoke-test.sh ${SMOKE_TEST_HOST} ${DEPLOY_PORT}"
                     """
                 }
             }
