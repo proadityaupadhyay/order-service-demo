@@ -1,9 +1,12 @@
 // Multibranch Pipeline script path: deploy/ci-cd/Jenkinsfile (not the repo
 // root -- set this explicitly in the Jenkins job config).
 //
-// Flow: checkout -> resolve env from branch -> mvn build+test -> docker
-// build (bakes the branch's design-time.substvar in) -> push to the private
-// registry -> SSH deploy to the remote Docker host -> smoke test.
+// Flow: checkout -> resolve env from branch -> detect whether app/ actually
+// changed since the last successful build on this branch -> if so, mvn
+// build+test -> docker build (bakes the branch's design-time.substvar in) ->
+// push to the private registry; either way -> SSH deploy to the remote
+// Docker host (reusing the last-published image for this env on a
+// config-only change) -> smoke test.
 //
 // Registry: Docker Hub (proadityaupadhyay/order-service-demo, public repo) --
 // no registry host prefix needed, `docker login`/`push` default to docker.io.
@@ -67,7 +70,31 @@ pipeline {
             }
         }
 
+        stage('Detect Change Scope') {
+            steps {
+                script {
+                    def baseCommit = env.GIT_PREVIOUS_SUCCESSFUL_COMMIT
+                    if (baseCommit) {
+                        def changedFiles = sh(script: "git diff --name-only ${baseCommit} HEAD", returnStdout: true).trim()
+                        echo "Changed since last successful build (${baseCommit}):\n${changedFiles ?: '(none)'}"
+                        // Only app/ affects the build/test/image; deploy/config and
+                        // deploy/scripts changes are config-only and can redeploy the
+                        // already-published image for this env instead of rebuilding.
+                        env.CODE_CHANGED = changedFiles.tokenize('\n').any { it.startsWith('app/') } ? 'true' : 'false'
+                    } else {
+                        env.CODE_CHANGED = 'true'
+                        echo "No previous successful build on this branch -- full build required."
+                    }
+                    env.DEPLOY_IMAGE = (env.CODE_CHANGED == 'true')
+                        ? "${IMAGE_NAME}:${env.IMAGE_TAG}"
+                        : "${IMAGE_NAME}:${env.DEPLOY_ENV}-latest"
+                    echo "CODE_CHANGED=${env.CODE_CHANGED}, DEPLOY_IMAGE=${env.DEPLOY_IMAGE}"
+                }
+            }
+        }
+
         stage('Build & Test (Maven)') {
+            when { environment name: 'CODE_CHANGED', value: 'true' }
             steps {
                 dir('app') {
                     // -P${DEPLOY_ENV} bakes app/OrderService.application/configuration/{env}.substvar
@@ -83,6 +110,7 @@ pipeline {
         }
 
         stage('Docker Build') {
+            when { environment name: 'CODE_CHANGED', value: 'true' }
             steps {
                 // Re-runs the Maven build inside the image for a clean,
                 // reproducible artifact (tests already ran and were
@@ -99,6 +127,7 @@ pipeline {
         }
 
         stage('Push Image') {
+            when { environment name: 'CODE_CHANGED', value: 'true' }
             steps {
                 withCredentials([usernamePassword(credentialsId: env.REGISTRY_CRED, usernameVariable: 'REG_USER', passwordVariable: 'REG_PASS')]) {
                     sh """
@@ -118,7 +147,7 @@ pipeline {
                         ssh -o StrictHostKeyChecking=no ${REMOTE_HOST} 'mkdir -p ${REMOTE_DEPLOY_DIR}'
                         rsync -az --delete -e 'ssh -o StrictHostKeyChecking=no' deploy/ ${REMOTE_HOST}:${REMOTE_DEPLOY_DIR}/
                         ssh -o StrictHostKeyChecking=no ${REMOTE_HOST} \
-                            "IMAGE=${IMAGE_NAME}:${env.IMAGE_TAG} PORT=${DEPLOY_PORT} bash ${REMOTE_DEPLOY_DIR}/ci-cd/deploy/deploy-${env.DEPLOY_ENV}.sh"
+                            "IMAGE=${env.DEPLOY_IMAGE} PORT=${DEPLOY_PORT} bash ${REMOTE_DEPLOY_DIR}/ci-cd/deploy/deploy-${env.DEPLOY_ENV}.sh"
                     """
                 }
             }
