@@ -1,2 +1,3 @@
 /app/     @integration-team
 /deploy/  @platform-team
+/ci-cd/ @devops-team
