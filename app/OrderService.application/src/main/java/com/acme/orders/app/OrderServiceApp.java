@@ -41,7 +41,7 @@ public class OrderServiceApp {
 
         server.createContext("/info", exchange -> respond(exchange, 200,
                 "{\"env\":\"" + envName + "\",\"discountRate\":" + discountRate
-                        + ",\"logLevel\":\"" + logLevel + "\"}"));
+                        + ",\"logLevel\":\"" + logLevel + "\",\"appVersion\":\"1.1\"}"));
 
         server.createContext("/order", exchange -> {
             if (!"GET".equals(exchange.getRequestMethod())) {
